@@ -126,12 +126,12 @@
     api_username: root
     api_password: "{{ gitlab_root_password }}"
     name: root
-    username: root
+    username: admin
     password: "!S1n0Kab4T4l4g4N0w"
     email: root@{{ inventory_hostname }}
     state: present
+    access_level: owner 
   when: first_install == true
-
 
 
 
