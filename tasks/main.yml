@@ -1,0 +1,142 @@
+---
+# check if gitlab-ctl exists as /usr/bin/gitlab-ctl and if it does not exist then install gitlab-ce
+- name: Check if gitlab-ctl exists
+  stat:
+    path: /etc/gitlab/gitlab.rb
+  register: gitlab_etc_dir
+
+# Set fact first_install to true if gitlab-ctl does not exist
+- name: Set fact first_install to true if gitlab-ctl does not exist
+  set_fact:
+    first_install: true
+  when: gitlab_etc_dir.stat.exists == false
+
+# Install python3 and python3-pip if this is Centos or Redhat or Rocky Linux version 8 or 7
+- name: Install python3 and python3-pip
+  yum:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  loop:
+    - python3
+    - python3-pip
+  when: ansible_distribution_major_version == "8" or ansible_distribution_major_version == "7" and first_install == true
+
+# check if /usr/local/lib/python3.6/site-packages/gitlab exists
+- name: Check if /usr/local/lib/python3.6/site-packages/gitlab exists
+  stat:
+    path: /usr/local/lib/python3.6/site-packages/gitlab
+  register: gitlab_python_module
+
+# if /usr/local/lib/python3.6/site-packages/gitlab does not exist then install the python-gitlab module
+- name: Install python-gitlab module
+  pip:
+    name: python-gitlab
+    executable: pip3
+  when: gitlab_python_module.stat.exists == false
+
+# download https://packages.gitlab.com/install/repositories/gitlab/gitlab-ce/script.rpm.sh  using curl and run it with bash
+- name: Download and run the GitLab repository setup script
+  shell: curl -s https://packages.gitlab.com/install/repositories/gitlab/gitlab-ce/script.rpm.sh | sudo bash
+  args:
+    creates: /etc/yum.repos.d/gitlab_gitlab-ce.repo
+  when: first_install == true
+
+# Ensure gitlab-ce is installed with the latest version if gitlab_version is not defined otherwise install the specified version
+- name: Install GitLab
+  yum:
+    name: gitlab-ce
+    state: latest
+    update_cache: yes
+  when: gitlab_version is not defined and first_install == true
+
+- name: Install GitLab version {{ gitlab_version }}
+  yum:
+    name: gitlab-ce-{{ gitlab_version }}-ce
+    state: present
+    update_cache: yes
+  when: gitlab_version is defined and first_install == true
+
+# check if the gitlab.rb file exists
+- name: Check if gitlab.rb exists
+  stat:
+    path: /opt/gitlab/etc/gitlab.rb
+  register: gitlab_rb
+
+
+# Start and configure GitLab. Sometimes the first run fails, but after that,
+# restarts fix problems, so ignore failures on this run.
+# this is the first run of gitlab-ctl reconfigure and should run only if first_install is true
+- name: Reconfigure GitLab (first run).
+  command: >
+    gitlab-ctl reconfigure
+    creates=/var/opt/gitlab/bootstrapped
+  failed_when: false
+  when: first_install == true
+
+# configure firewalld to allow http and https traffic  if allowed_ips is not defined
+- name: configure default public access if allowed_ips is not defined
+  firewalld:
+      service: "{{ item }}"
+      permanent: yes
+      state: enabled
+      immediate: yes
+  loop:
+      - http
+      - https
+  notify: reload firewalld
+  when: allowed_ips is not defined
+
+# configure firewalld to allow http and https traffic  if allowed_ips is defined
+- name: configure allowed_ips access
+  firewalld:
+      service: "{{ item }}"
+      permanent: yes
+      state: enabled
+      immediate: yes
+      source: "{{ allowed_ips }}"
+  loop:
+      - http
+      - https
+  notify: reload firewalld
+  when: allowed_ips is defined
+
+# Look for the initial root password line
+- name: Get initial GitLab root password
+  command: grep '^Password:' /etc/gitlab/initial_root_password
+  register: gitlab_root_password_fact
+
+# Now store the password in a fact called gitlab_root_password. Do this only on first_install of gitlab
+- name: Set initial GitLab root password as a fact
+  set_fact:
+    gitlab_root_password: "{{ gitlab_root_password_fact.stdout.split(':')[1].strip() }}"
+  when: first_install == true
+
+
+# use debug to display the gitlab_root_password fact
+- name: Display the GitLab root password
+  debug:
+    msg: "GitLab root password is {{ gitlab_root_password }}"
+  when: first_install == true
+
+# use ansible  gitlab_user to change the password of the root user to the value of gitlab_root_password
+- name: update the root password for gitlab
+  gitlab_user:
+    api_url: http://{{ inventory_hostname }}/
+    api_username: root
+    api_password: "{{ gitlab_root_password }}"
+    name: root
+    username: root
+    password: "!S1n0Kab4T4l4g4N0w"
+    email: root@{{ inventory_hostname }}
+    state: present
+  when: first_install == true
+
+
+
+
+
+
+
+
+
