@@ -1,0 +1,61 @@
+
+# check if there is a package gitlab-ce installed and set the variable gitlab_package  installed to true if it is installed
+
+- name: Check if gitlab-ce is installed
+  stat:
+    path: /usr/bin/gitlab-ctl
+  register: gitlab_package
+
+# check if the gitlab.rb file exists
+- name: Check if gitlab.rb exists
+  stat:
+    path: /etc/gitlab/gitlab.rb
+  register: gitlab_rb
+
+# Check if gitlab repo is installed
+- name: Check if gitlab repo is installed
+  stat:
+    path: /etc/apt/sources.list.d/gitlab_gitlab-ce.list
+  register: gitlab_repo
+
+# print the gitlab_package variable
+- debug:
+    var: gitlab_package.stat.exists
+
+# print the gitlab_rb variable
+- debug:
+    var: gitlab_rb.stat.exists
+
+- name: install gitlab-ce repo pub keys
+  apt_key:
+    url: https://packages.gitlab.com/gpg.key
+    state: present
+  when: gitlab_rb.stat.exists == false
+ 
+
+# Install the gitlab-ce ubuntu repo if it is not installed
+- name: Install gitlab-ce ubuntu repo
+  apt_repository:
+    repo: deb https://packages.gitlab.com/gitlab/gitlab-ce/ubuntu/ {{ansible_distribution_release}} main
+    state: present
+    filename: gitlab_gitlab-ce
+    update_cache: yes
+  when: gitlab_rb.stat.exists == false
+
+
+  # Install gitlab-ce if it is not installed
+- name: Install gitlab-ce
+  apt:
+    name: gitlab-ce
+    state: present
+    update_cache: yes
+  when: gitlab_package.stat.exists == false
+
+- name: run gitlb-ctl reconfigure if its a first install 
+  shell: /usr/bin/gitlab-ctl reconfigure
+  when: gitlab_package.stat.exists == false
+  tags:
+    - gitlab_reconfigure
+
+
+

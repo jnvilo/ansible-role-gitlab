@@ -5,3 +5,6 @@
 #set the deault gitlab_external_url to the ansible inventory hostname
 gitlab_external_fqdn: "{{ inventory_hostname }}"
 first_install: false
+
+
+manage_config: true
